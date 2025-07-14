@@ -16,7 +16,7 @@ const webhookMediumUrl = process.env.WEBHOOK_MEDIUM;
 const webhookLowUrl = process.env.WEBHOOK_LOW;
 
 const suggestedKeywordsFile = './suggested_keywords.json';
-const keywordReviewUserId = '1002739977181995080';
+const keywordReviewUserId = '';
 
 const { lowRisk, mediumRisk, highRisk } = require('./keywords');
 
@@ -358,7 +358,7 @@ client.on('messageCreate', async (msg) => {
   if (msg.author.bot) return;
 
   if (msg.guild) {
-    const mainServerId = '1394339217055678586';
+    const mainServerId = '';
     if (msg.guild.id !== mainServerId) {
       if (msg.content.startsWith('.')) return; // ignore commands outside main server
   };
@@ -840,7 +840,7 @@ const matchWord = matchIndex !== -1 && flags[matchIndex + 1] ? flags[matchIndex 
 }
 
     if (msg.content.startsWith('.delcase ')) {
-  const devRoleId = '1391992922697760830';
+  const devRoleId = '';
   if (!msg.member.roles.cache.has(devRoleId)) {
     await msg.channel.send("You do not have permission to use this command.");
     return;
