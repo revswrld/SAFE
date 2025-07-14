@@ -1,0 +1,7 @@
+node_modules/
+.env
+logs/
+cases/
+*.logs
+*.sqlite
+*.bat
