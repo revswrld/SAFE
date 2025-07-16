@@ -505,7 +505,7 @@ if (msg.content === '.mutualwl') {
 if (msg.content.startsWith('.flagignore')) {
   const args = msg.content.split(' ').slice(1);
   const ignored = loadIgnoredServers();
-  const devRoleId = '1394342876518813837';
+  const devRoleId = '';
   const member = msg.member;
 
   if (!member || !member.roles.cache.has(devRoleId)) {
