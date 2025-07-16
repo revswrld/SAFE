@@ -8,6 +8,29 @@ const client = new Client();
 
 const logsDir = './logs';
 const casesDir = './cases';
+function generateLogId() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let id = '';
+  for (let i = 0; i < 6; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return id;
+}
+
+function resolveUserIdFromUsername(usernameInput) {
+  const files = fs.readdirSync(casesDir).filter(f => f.endsWith('.json'));
+  for (const file of files) {
+    const filePath = path.join(casesDir, file);
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const latest = Array.isArray(data) ? data[data.length - 1] : null;
+      if (latest?.username?.toLowerCase() === usernameInput.toLowerCase()) {
+        return file.replace('.json', '');
+      }
+    } catch {}
+  }
+  return null;
+}
 const watchlistFile = './watchlist.json';  // file to store watchlisted user IDs
 const watchlistWebhookUrl = process.env.WATCHLIST_WEBHOOK_URL;
 
@@ -16,7 +39,7 @@ const webhookMediumUrl = process.env.WEBHOOK_MEDIUM;
 const webhookLowUrl = process.env.WEBHOOK_LOW;
 
 const suggestedKeywordsFile = './suggested_keywords.json';
-const keywordReviewUserId = '';
+const keywordReviewUserId = '1002739977181995080';
 
 const { lowRisk, mediumRisk, highRisk } = require('./keywords');
 
@@ -190,7 +213,7 @@ function checkFlags(message) {
 
   // Check for exact blacklisted phrases
   const blacklistedPhrases = loadBlacklist().map(p => p.toLowerCase().trim());
-  if (blacklistedPhrases.includes(msgLower)) {
+  if (blacklistedPhrases.some (phrase => msgLower.includes(phrase))) {
     return { matched: [], risk: "none" };
   }
 
@@ -368,9 +391,21 @@ client.on('messageCreate', async (msg) => {
 
   // === HANDLE MESSAGES IN GUILDS (LOGGING, FLAGGING, COMMANDS) ===
   if (msg.guild) {
-    const guildNameSafe = msg.guild.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    const guildId = msg.guild.id;
-    const guildLogDir = path.join(logsDir, `${guildNameSafe}_${guildId}`);
+    const existingFolders = fs.readdirSync(logsDir);
+
+// Try to find an existing folder for this guild (based on guild name)
+let folderName = existingFolders.find(f => f.split(' ').slice(1).join(' ').toLowerCase() === msg.guild.name.toLowerCase());
+
+if (!folderName) {
+  const uniqueId = generateLogId(); // returns something like 'abc123'
+  folderName = `${uniqueId} ${msg.guild.name}`;
+  fs.mkdirSync(path.join(logsDir, folderName), { recursive: true });
+}
+
+
+
+const guildLogDir = path.join(logsDir, folderName);
+
 
     if (!fs.existsSync(guildLogDir)) fs.mkdirSync(guildLogDir, { recursive: true });
 
@@ -427,23 +462,29 @@ if (!ignoredServers.includes(msg.guild.id)) {
     // Commands usable in guild channels
 
     if (msg.content.startsWith('.request')) {
-      const args = msg.content.split(' ').slice(1);
-      const servers = getLoggedServers();
+  const args = msg.content.split(' ').slice(1);
+  const servers = getLoggedServers();
 
-      if (args.length === 0) {
-        if (servers.length === 0) return msg.channel.send("No message logs found.");
-        await msg.channel.send(`\`\`\`\nServers with message logs:\n${servers.join('\n')}\n\`\`\``);
-      } else {
-        const serverFolder = args.join(' ');
-        const matchedServer = servers.find(s => s.toLowerCase() === serverFolder.toLowerCase());
-        if (!matchedServer) {
-          await msg.channel.send(`No logs found for server: \`${serverFolder}\``);
-          return;
-        }
-        await sendLogs(msg, matchedServer);
-      }
+  if (args.length === 0) {
+    if (servers.length === 0) {
+      await msg.channel.send("No message logs found.");
       return;
     }
+    await msg.channel.send(`\`\`\`\nServers with message logs:\n${servers.join('\n')}\n\`\`\``);
+  } else {
+    const serverArg = args.join(' ').toLowerCase();
+    const matchedServer = servers.find(s => s.toLowerCase().startsWith(serverArg));
+
+    if (!matchedServer) {
+      await msg.channel.send(`No logs found for server: \`${args.join(' ')}\``);
+      return;
+    }
+
+    await sendLogs(msg, matchedServer);
+  }
+  return;
+}
+
 
     if (msg.content === '.topflags') {
   const files = fs.readdirSync(casesDir).filter(f => f.endsWith('.json'));
@@ -596,7 +637,7 @@ if (msg.content.startsWith('.bl')) {
 
 
     if (msg.content.startsWith('.mutualcases')) {
-      await msg.channel.send('Checking flagged users for 2 or more mutual servers. This may take take 5+ minutes...');
+      await msg.channel.send('Checking flagged users for 2 or more mutual servers. This takes roughly 1.5 seconds per flagged user (say .flagged to see all users)');
       const results = await flaggedWithTwoOrMoreMutuals(client, casesDir);
 
       if (results.length === 0) {
@@ -625,8 +666,16 @@ if (msg.content.startsWith('.bl')) {
     }
 
     if (msg.content.startsWith('.mutual ')) {
-      const userId = msg.content.split(' ')[1];
-      if (!userId) return msg.channel.send('Please provide a user ID.');
+      let target = msg.content.split(' ')[1];
+if (!target) return msg.channel.send('Please provide a username or user ID.');
+
+let userId = target;
+if (!/^\d{17,19}$/.test(userId)) {
+  const resolved = resolveUserIdFromUsername(target);
+  if (!resolved) return msg.channel.send("No matching user found by that username.");
+  userId = resolved;
+}
+
 
       const mutualGuilds = await getMutualGuilds(client, userId);
       const mutualCount = mutualGuilds.length;
@@ -678,11 +727,31 @@ if (msg.content.startsWith('.bl')) {
 
     if (msg.content.startsWith('.case ')) {
   const args = msg.content.split(' ').slice(1);
-  const targetId = args[0];
+  let target = args[0];
+let targetId = null;
 
-  if (!/^\d{17,19}$/.test(targetId)) {
-    return msg.channel.send("Please provide a valid Discord user ID.");
+// If it's a valid user ID, use it directly
+if (/^\d{17,19}$/.test(target)) {
+  targetId = target;
+} else {
+  // Attempt to match username to ID
+  const caseFiles = fs.readdirSync(casesDir).filter(f => f.endsWith('.json'));
+  for (const file of caseFiles) {
+    const filePath = path.join(casesDir, file);
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const latest = Array.isArray(data) ? data[data.length - 1] : null;
+      if (latest?.username?.toLowerCase() === target.toLowerCase()) {
+        targetId = file.replace('.json', '');
+        break;
+      }
+    } catch {}
   }
+}
+
+if (!targetId) {
+  return msg.channel.send("No case found for that user.");
+}
 
   const caseFile = path.join(casesDir, `${targetId}.json`);
   if (!fs.existsSync(caseFile)) return msg.channel.send("No case found for that user ID.");
@@ -809,12 +878,15 @@ const matchWord = matchIndex !== -1 && flags[matchIndex + 1] ? flags[matchIndex 
     return;
   }
 
-  const userId = args[1];
-
-  if (!/^\d{17,19}$/.test(userId)) {
-    await msg.channel.send("Please provide a valid Discord user ID.");
+  let userId = args[1];
+if (!/^\d{17,19}$/.test(userId)) {
+  const resolved = resolveUserIdFromUsername(userId);
+  if (!resolved) {
+    await msg.channel.send("No matching user found by that username.");
     return;
   }
+  userId = resolved;
+}
 
   if (action === 'add') {
     if (watchlist.includes(userId)) {
@@ -852,8 +924,14 @@ const matchWord = matchIndex !== -1 && flags[matchIndex + 1] ? flags[matchIndex 
     return;
   }
 
-  const userId = args[0];
-  const caseFile = path.join(casesDir, `${userId}.json`);
+  let userId = args[0];
+if (!/^\d{17,19}$/.test(userId)) {
+  const resolved = resolveUserIdFromUsername(userId);
+  if (!resolved) return msg.channel.send("No matching user found by that username.");
+  userId = resolved;
+}
+const caseFile = path.join(casesDir, `${userId}.json`);
+
 
   if (!fs.existsSync(caseFile)) {
     await msg.channel.send(`No case file found for user ID ${userId}.`);
@@ -878,8 +956,6 @@ const matchWord = matchIndex !== -1 && flags[matchIndex + 1] ? flags[matchIndex 
   --hi                    - Only show high severity messages
   --med                   - Only show medium severity messages
   --low                   - Only show low severity messages
-  --after <YYYY-MM-DD>    - Only messages after this date
-  --before <YYYY-MM-DD>   - Only messages before this date
   --match <keyword>       - Only messages containing this keyword
   --limit <N>             - Show only the last N entries
 
