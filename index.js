@@ -381,7 +381,7 @@ client.on('messageCreate', async (msg) => {
   if (msg.author.bot) return;
 
   if (msg.guild) {
-    const mainServerId = '';
+    const mainServerId = '1394339217055678586';
     if (msg.guild.id !== mainServerId) {
       if (msg.content.startsWith('.')) return; // ignore commands outside main server
   };
@@ -394,13 +394,23 @@ client.on('messageCreate', async (msg) => {
     const existingFolders = fs.readdirSync(logsDir);
 
 // Try to find an existing folder for this guild (based on guild name)
-let folderName = existingFolders.find(f => f.split(' ').slice(1).join(' ').toLowerCase() === msg.guild.name.toLowerCase());
+const sanitize = (name) => name.replace(/[<>:"/\\|?*]/g, '');
+
+let folderName = existingFolders.find(f => {
+  // Match against sanitized name in existing folder names
+  return f.split(' ').slice(1).join(' ').toLowerCase() === sanitize(msg.guild.name.toLowerCase());
+});
 
 if (!folderName) {
-  const uniqueId = generateLogId(); // returns something like 'abc123'
-  folderName = `${uniqueId} ${msg.guild.name}`;
+  const uniqueId = generateLogId(); // e.g., 'abc123'
+
+  // Sanitize just the guild name part
+  const safeName = sanitize(msg.guild.name);
+
+  folderName = `${uniqueId} ${safeName}`;
   fs.mkdirSync(path.join(logsDir, folderName), { recursive: true });
 }
+
 
 
 
@@ -422,7 +432,7 @@ const guildLogDir = path.join(logsDir, folderName);
 
   const wlData = {
     guildName: msg.guild.name,
-    guildId,
+    guildId: msg.guild.id,
     userId: msg.author.id,
     username: msg.author.tag,
     date: dateStr,
@@ -430,7 +440,7 @@ const guildLogDir = path.join(logsDir, folderName);
     timestamp: now.toISOString(),
     content: msg.content || '',
     matched,
-    link: `https://discord.com/channels/${guildId}/${msg.channel.id}/${msg.id}`
+    link: `https://discord.com/channels/${msg.guild.id}/${msg.channel.id}/${msg.id}`
   };
 
   sendWatchlistWebhook(wlData);
@@ -443,7 +453,7 @@ if (!ignoredServers.includes(msg.guild.id)) {
   if (matched.length > 0) {
     const flaggedData = {
       guildName: msg.guild.name,
-      guildId,
+      guildId: msg.guild.id,
       userId: msg.author.id,
       username: msg.author.tag,
       date: dateStr,
@@ -452,7 +462,7 @@ if (!ignoredServers.includes(msg.guild.id)) {
       content: msg.content || '',
       matched,
       risk,
-      link: `https://discord.com/channels/${guildId}/${msg.channel.id}/${msg.id}`
+      link: `https://discord.com/channels/${msg.guild.id}/${msg.channel.id}/${msg.id}`
     };
     const count = logFlaggedMessage(flaggedData);
     flaggedData.flagCount = count;
@@ -546,7 +556,7 @@ if (msg.content === '.mutualwl') {
 if (msg.content.startsWith('.flagignore')) {
   const args = msg.content.split(' ').slice(1);
   const ignored = loadIgnoredServers();
-  const devRoleId = '';
+  const devRoleId = '1394342876518813837';
   const member = msg.member;
 
   if (!member || !member.roles.cache.has(devRoleId)) {
@@ -850,7 +860,7 @@ const matchWord = matchIndex !== -1 && flags[matchIndex + 1] ? flags[matchIndex 
       const user = await client.users.fetch(userId);
       lines.push(`${i + 1}. ${user.tag} (<@${userId}>)`);
     } catch {
-      lines.push(`${i + 1}. UnknownUser (<@${userId}>)`);
+      lines.push(`${i + 1}. User: (<@${userId}>)`);
     }
   }
 
@@ -912,7 +922,7 @@ if (!/^\d{17,19}$/.test(userId)) {
 }
 
     if (msg.content.startsWith('.delcase ')) {
-  const devRoleId = '';
+  const devRoleId = '1394342876518813837';
   if (!msg.member.roles.cache.has(devRoleId)) {
     await msg.channel.send("You do not have permission to use this command.");
     return;
